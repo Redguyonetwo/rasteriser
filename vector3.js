@@ -64,11 +64,26 @@ class VectorLib {
     }
 
     unit(v) {
-        this.mult(v, 1 / this.magnitude(v))
+    let mag = this.magnitude(v);
+
+        if (mag < 1e-8) {
+            v.x = 0;
+            v.y = 0;
+            v.z = 0;
+            return;
+        }
+
+        this.mult(v, 1 / mag);
     }
 
     unit2(v) {
-        return this.mult2(v, 1 / this.magnitude(v))
+        let mag = this.magnitude(v);
+
+        if (mag < 1e-8) {
+            return {x:0,y:0,z:0};
+        }
+
+        return this.mult2(v, 1 / mag);
     }
 
     copy(v1, v2) {
@@ -156,6 +171,7 @@ class VectorLib {
 
     average(...vs) {
         let x, y, z;
+        x = y = z = 0;
 
         let div = 1 / vs.length;
 
@@ -166,6 +182,10 @@ class VectorLib {
         }
 
         return {x,y,z};
+    }
+
+    isNaN(v) {
+        return isNaN(v.x) || isNaN(v.y) || isNaN(v.z);
     }
 }
 

@@ -47,8 +47,8 @@ let skipped_triangles = 0;
 
 const LIGHTS = [];
 
-const AMBIENT_LIGHT_INTENSITY = 0.1;
-
+const AMBIENT_LIGHT_INTENSITY = 0.2;
+/*
 LIGHTS.push(
     {
         type: 'p',
@@ -74,6 +74,13 @@ LIGHTS.push(
         i: 0.1
     }
 )
+*/
+
+const p1 = {type: 'p', i: 0.6, x: 0, y: 1, z: 3.5}
+
+const d1 = {type: 'd', i: 0.2, x: 1, y: 4, z: 4} //this is a direction vector, not position
+
+LIGHTS.push(p1, d1)
 
 const sumI = (sum, light) => sum + light.i;
 
@@ -171,14 +178,16 @@ function getLightLevel(p, n) {
 
         let H = Vector.add2(L, V);
 
-        Vector.unit(H);
+        if (Vector.magSquared(H) > 1e-12) {
+            Vector.unit(H);
 
-        let spec = Math.pow(
-            Math.max(0, Vector.dot(n, H)),
-            16
-        );
+            let spec = Math.pow(
+                Math.max(0, Vector.dot(n, H)),
+                16
+            );
 
-        i += light.i * spec * 0.5;
+            i += light.i * spec * 0.5;
+        }
     }
 
     return i;
@@ -513,11 +522,15 @@ function drawShadedDepthTriangle(p0, p1, p2, colour = GREEN) {
             let z = z_values[x_index];
             let i = i_values[x_index] / MAX_INTENSITY;
 
+            //if (x == x_l && y == p0.y) console.log(i);
+
             if (z <= DEPTH_BUFFER[index]) continue;
 
             DEPTH_BUFFER[index] = z;
 
             index *= 4;
+
+            if (isNaN(i)) i = AMBIENT_LIGHT_INTENSITY;
 
             IMAGE_BUFFER.data[index] = r * i;
             IMAGE_BUFFER.data[index + 1] = g * i;
@@ -533,9 +546,11 @@ function drawDot(dot) {
     ctx.fillText(dot.name || 'P', dot.x + CENTRE.x, dot.y + CENTRE.y);
 }
 
-function render3D(vertices, triangles, translateVector = null, scaleVector = null) {
+function render3D(model, translateVector = null, scaleVector = null) {
     let worldVertices = [];
     let projected = [];
+
+    let {vertices, triangles, colour} = model;
 
     for (let v of vertices) {
         let realV = v;
@@ -552,7 +567,7 @@ function render3D(vertices, triangles, translateVector = null, scaleVector = nul
     }
 
     for (let t of triangles) {
-        let [index0, index1, index2, colour] = t;
+        let [index0, index1, index2] = t;
 
         let p0 = worldVertices[index0]
         let p1 = worldVertices[index1]
@@ -581,7 +596,7 @@ function render3D(vertices, triangles, translateVector = null, scaleVector = nul
         proj1.i = getLightLevel(p1, normal);
         proj2.i = getLightLevel(p2, normal);
 
-        drawShadedDepthTriangle(proj0, proj1, proj2, colour || CYAN);
+        drawShadedDepthTriangle(proj0, proj1, proj2, colour);
     }
 }
 
@@ -732,6 +747,7 @@ const isosphere = {
     r: 1
 };
 
+/*
 const icosphere = {
     vertices: [
         // 12 Original Icosahedron Vertices
@@ -805,13 +821,139 @@ const icosphere = {
     ],
     r: 1
 }
+*/
+
+/**
+ * Generates an icosphere with unique vertices and triangle indices.
+ * @param {number} subdivisions - The number of subdivision steps (e.g., 1).
+ * @returns {{vertices: number[][], triangles: number[][]}} 
+ */
+function createIcosphere(subdivisions = 1) {
+    // 1. Define the 12 golden ratio vertices of a base icosahedron
+    const t = (1.0 + Math.sqrt(5.0)) / 2.0;
+    let successes = 0;
+    let vertices = [
+    Vector.new(-1,  t,  0),
+    Vector.new( 1,  t,  0),
+    Vector.new(-1, -t,  0),
+    Vector.new( 1, -t,  0),
+
+    Vector.new( 0, -1,  t),
+    Vector.new( 0,  1,  t),
+    Vector.new( 0, -1, -t),
+    Vector.new( 0,  1, -t),
+
+    Vector.new( t,  0, -1),
+    Vector.new( t,  0,  1),
+    Vector.new(-t,  0, -1),
+    Vector.new(-t,  0,  1)
+];
+
+    for (let i in vertices) {
+        Vector.unit(vertices[i]);
+    }
+
+    // Define the 20 base triangles
+    let triangles = [
+    [0,11,5],
+    [0,5,1],
+    [0,1,7],
+    [0,7,10],
+    [0,10,11],
+
+    [1,5,9],
+    [5,11,4],
+    [11,10,2],
+    [10,7,6],
+    [7,1,8],
+
+    [3,9,4],
+    [3,4,2],
+    [3,2,6],
+    [3,6,8],
+    [3,8,9],
+
+    [4,9,5],
+    [2,4,11],
+    [6,2,10],
+    [8,6,7],
+    [9,8,1]
+];
+
+        // Cache to track midpoints and prevent duplicates
+    const midpointCache = new Map();
+
+    // Helper function to calculate and cache the midpoint of two vertices
+    function getMidpoint(p1, p2) {
+        // Create a unique key regardless of edge direction (e.g., "3_5")
+        const key = p1 < p2 ? `${p1}_${p2}` : `${p2}_${p1}`;
+        
+        if (midpointCache.has(key)) {
+            return midpointCache.get(key);
+        }
+
+        const v1 = vertices[p1];
+        const v2 = vertices[p2];
+
+        // Find middle point
+        const middle = Vector.average(v1, v2)
+
+        if (Vector.isNaN(middle)) {
+            console.log('middle of', p1, 'and', p2, 'failed:')
+            console.log(v1)
+            console.log(v2)
+            console.log(middle)
+        }
+        else successes++;
+
+        // Push point onto the unit sphere surface
+        Vector.unit(middle);
+
+        // Add to global vertex list
+        vertices.push(middle);
+        const newIndex = vertices.length - 1;
+        
+        // Cache it
+        midpointCache.set(key, newIndex);
+        return newIndex;
+    }
+
+    // 2. Subdivide faces iteratively
+    for (let i = 0; i < subdivisions; i++) {
+        const nextTriangles = [];
+
+        for (let j = 0; j < triangles.length; j++) {
+            const [v1, v2, v3] = triangles[j];
+
+            // Get midpoints of the 3 outer edges
+            const a = getMidpoint(v1, v2);
+            const b = getMidpoint(v2, v3);
+            const c = getMidpoint(v3, v1);
+
+            console.log(a, b, c)
+
+            // Split 1 triangle into 4 smaller triangles
+            nextTriangles.push([v1, a, c]);
+            nextTriangles.push([v2, b, a]);
+            nextTriangles.push([v3, c, b]);
+            nextTriangles.push([a, b, c]);
+        }
+
+        triangles = nextTriangles;
+    }
+
+    return { vertices, triangles, r: 1 };
+}
+
+// --- Usage Example ---
+const icosphere = createIcosphere(1); // 1st subdivision
 
 const models = {cube, pyramid, isosphere, icosphere}
 
-function createObject(type, position = null, rotation = null, scale = null) {
+function createObject(type, position = null, rotation = null, scale = null, colour = RED) {
     let template = models[type];
     
-    let newObj = {vertices: [], triangles: [], r: template.r};
+    let newObj = {vertices: [], triangles: [], r: template.r, colour};
 
     for (let v of template.vertices) {
         let realV = Vector.clone(v);
@@ -898,6 +1040,36 @@ function moveObject(object, translateVector) {
     }
 }
 
+let scale = 0.5;
+
+let scaleV = Vector.new(scale, scale, scale);
+
+let s1 = createObject(
+    'icosphere', 
+    Vector.new(0.1, -1, 3),
+    null,
+    null,
+    RED
+)
+
+let s2 = createObject(
+    'icosphere',
+    Vector.new(2, 0, 4),
+    null,
+    null,
+    BLUE
+)
+
+let s3 = createObject('icosphere', Vector.new(-2, 0, 4), null, null, GREEN)
+
+let s4 = createObject('cube', Vector.new(0, -1, 5), null, Vector.new(7, 0.1, 9), YELLOW)
+
+let s5 = createObject('icosphere', Vector.new(1, 2, 7), null, Vector.new(1.5, 1.5, 1.5), PURPLE)
+
+let instances = [s1, s2, s3, s4, s5];
+
+console.log(instances)
+
 function animate(timestamp) {
     requestAnimationFrame(animate)
 
@@ -905,26 +1077,16 @@ function animate(timestamp) {
 
     skipped_triangles = 0;
 
-    let scale = 0.5;
-    let scaleV = Vector.new(scale, scale, scale)
-
-    let instances = [
-        createObject('cube', Vector.new(0, -2, 5.1), null, Vector.new(10, 1, 10)),
-        createObject('icosphere', Vector.new(0.1, -1, 3), Vector.new(0, timestamp * 0.001, 0), scaleV),
-        createObject('icosphere', Vector.new(2, 0, 4), Vector.new(timestamp * 0.001, timestamp * 0.001, timestamp * 0.002), scaleV),
-        createObject('icosphere', Vector.new(Math.sin(timestamp * 0.001), 0, Math.cos(timestamp * 0.001) + 4), Vector.new(0, timestamp * 0.002, 0), scaleV),
-
-    ]
-
-    instances[0].r = 10;
-
     let clipped_instances = clipInstances(instances);
 
     for (let instance of clipped_instances) {
-        render3D(instance.vertices, instance.triangles);
+        render3D(instance);
     }
 
+    instances[4] = createObject('icosphere', Vector.new(0, 2, 6), Vector.new(0, timestamp * 0.001, 0), null, PURPLE)
+
     ctx.putImageData(IMAGE_BUFFER, 0, 0);
+    /*
 
     ctx.save()
     ctx.scale(1, -1)
@@ -933,6 +1095,7 @@ function animate(timestamp) {
     ctx.fillText(instances.length - clipped_instances.length + ' objects skipped', 100, CANVAS.y - 100)
     ctx.fillText(skipped_triangles + ' triangles skipped', 100, CANVAS.y - 50)
     ctx.restore()
+    */
 
     // clear buffer for next frame
 
